@@ -1,0 +1,4 @@
+C:/AndroidProjects/nback/app/.cxx/Debug/5k6b526g/arm64-v8a/CMakeFiles/nback_cimpl.dir
+C:/AndroidProjects/nback/app/.cxx/Debug/5k6b526g/arm64-v8a/CMakeFiles/JniBridge.dir
+C:/AndroidProjects/nback/app/.cxx/Debug/5k6b526g/arm64-v8a/CMakeFiles/edit_cache.dir
+C:/AndroidProjects/nback/app/.cxx/Debug/5k6b526g/arm64-v8a/CMakeFiles/rebuild_cache.dir

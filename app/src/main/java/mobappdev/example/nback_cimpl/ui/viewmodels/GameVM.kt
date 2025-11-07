@@ -1,5 +1,7 @@
 package mobappdev.example.nback_cimpl.ui.viewmodels
 
+import android.app.Application
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -12,43 +14,39 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import mobappdev.example.nback_cimpl.GameApplication
 import mobappdev.example.nback_cimpl.NBackHelper
 import mobappdev.example.nback_cimpl.data.UserPreferencesRepository
+import java.util.Locale
 
-/**
- * This is the GameViewModel.
- *
- * It is good practice to first make an interface, which acts as the blueprint
- * for your implementation. With this interface we can create fake versions
- * of the viewmodel, which we can use to test other parts of our app that depend on the VM.
- *
- * Our viewmodel itself has functions to start a game, to specify a gametype,
- * and to check if we are having a match
- *
- * Date: 25-08-2023
- * Version: Version 1.0
- * Author: Yeetivity
- *
- */
-
+enum class MatchResult {
+    NONE, CORRECT, INCORRECT
+}
 
 interface GameViewModel {
     val gameState: StateFlow<GameState>
     val score: StateFlow<Int>
     val highscore: StateFlow<Int>
-    val nBack: Int
+    val isGameOver: StateFlow<Boolean>
+    val matchResult: StateFlow<MatchResult>
+    val progress: StateFlow<Float>
 
     fun setGameType(gameType: GameType)
     fun startGame()
-
     fun checkMatch()
+    fun resetGame()
+    fun setNBack(nBack: Int)
+    fun setNumberOfEvents(numberOfEvents: Int)
+    fun setMatchPercentage(percentage: Int)
+    fun setEventInterval(interval: Long)
 }
 
 class GameVM(
-    private val userPreferencesRepository: UserPreferencesRepository
-): GameViewModel, ViewModel() {
+    private val userPreferencesRepository: UserPreferencesRepository,
+    private val application: Application
+) : GameViewModel, ViewModel() {
     private val _gameState = MutableStateFlow(GameState())
     override val gameState: StateFlow<GameState>
         get() = _gameState.asStateFlow()
@@ -61,108 +59,187 @@ class GameVM(
     override val highscore: StateFlow<Int>
         get() = _highscore
 
-    // nBack is currently hardcoded
-    override val nBack: Int = 2
+    private val _isGameOver = MutableStateFlow(false)
+    override val isGameOver: StateFlow<Boolean>
+        get() = _isGameOver.asStateFlow()
 
-    private var job: Job? = null  // coroutine job for the game event
-    private val eventInterval: Long = 2000L  // 2000 ms (2s)
+    private val _matchResult = MutableStateFlow(MatchResult.NONE)
+    override val matchResult: StateFlow<MatchResult>
+        get() = _matchResult.asStateFlow()
 
-    private val nBackHelper = NBackHelper()  // Helper that generate the event array
-    private var events = emptyArray<Int>()  // Array with all events
+    private val _progress = MutableStateFlow(0f)
+    override val progress: StateFlow<Float>
+        get() = _progress.asStateFlow()
+
+    private var job: Job? = null
+    private val nBackHelper = NBackHelper()
+    private var events = emptyArray<Int>()
+    private var currentEventIndex = 0
+    private var matchCheckedForCurrentEvent = false
+
+    private var tts: TextToSpeech? = null
+    private val _ttsReady = MutableStateFlow(false)
 
     override fun setGameType(gameType: GameType) {
-        // update the gametype in the gamestate
         _gameState.value = _gameState.value.copy(gameType = gameType)
     }
 
-    override fun startGame() {
-        job?.cancel()  // Cancel any existing game loop
+    override fun setNBack(nBack: Int) {
+        _gameState.value = _gameState.value.copy(nBack = nBack)
+    }
 
-        // Get the events from our C-model (returns IntArray, so we need to convert to Array<Int>)
-        events = nBackHelper.generateNBackString(10, 9, 30, nBack).toList().toTypedArray()  // Todo Higher Grade: currently the size etc. are hardcoded, make these based on user input
-        Log.d("GameVM", "The following sequence was generated: ${events.contentToString()}")
+    override fun setNumberOfEvents(numberOfEvents: Int) {
+        _gameState.value = _gameState.value.copy(numberOfEvents = numberOfEvents)
+    }
+
+    override fun setMatchPercentage(percentage: Int) {
+        _gameState.value = _gameState.value.copy(matchPercentage = percentage)
+    }
+
+    override fun setEventInterval(interval: Long) {
+        _gameState.value = _gameState.value.copy(eventInterval = interval)
+    }
+
+    override fun startGame() {
+        job?.cancel()
+        _score.value = 0
+        currentEventIndex = 0
+        _matchResult.value = MatchResult.NONE
+        _progress.value = 0f
+
+        val currentState = _gameState.value
+        events = nBackHelper.generateNBackString(
+            size = currentState.numberOfEvents,
+            combinations = 9,
+            percentMatch = currentState.matchPercentage,
+            nBack = currentState.nBack
+        ).toList().toTypedArray()
 
         job = viewModelScope.launch {
-            when (gameState.value.gameType) {
+            when (currentState.gameType) {
                 GameType.Audio -> runAudioGame()
-                GameType.AudioVisual -> runAudioVisualGame()
                 GameType.Visual -> runVisualGame(events)
+                GameType.AudioVisual -> runAudioVisualGame()
             }
-            // Todo: update the highscore
+            val currentHighscore = highscore.first()
+            if (score.value > currentHighscore) {
+                userPreferencesRepository.saveHighScore(score.value)
+            }
+            _isGameOver.value = true
         }
     }
 
     override fun checkMatch() {
-        /**
-         * Todo: This function should check if there is a match when the user presses a match button
-         * Make sure the user can only register a match once for each event.
-         */
-    }
-    private fun runAudioGame() {
-        // Todo: Make work for Basic grade
-    }
+        if (matchCheckedForCurrentEvent) return
 
-    private suspend fun runVisualGame(events: Array<Int>){
-        // Todo: Replace this code for actual game code
-        for (value in events) {
-            _gameState.value = _gameState.value.copy(eventValue = value)
-            delay(eventInterval)
+        val nBack = _gameState.value.nBack
+        if (currentEventIndex >= nBack && events[currentEventIndex] == events[currentEventIndex - nBack]) {
+            _score.value++
+            _matchResult.value = MatchResult.CORRECT
+        } else {
+            _matchResult.value = MatchResult.INCORRECT
         }
-
+        matchCheckedForCurrentEvent = true
     }
 
-    private fun runAudioVisualGame(){
-        // Todo: Make work for Higher grade
+    override fun resetGame() {
+        _isGameOver.value = false
+        _matchResult.value = MatchResult.NONE
+        _progress.value = 0f
+    }
+
+    private suspend fun runAudioGame() {
+        var waitTime = 0L
+        while (!_ttsReady.value && waitTime < 3000L) {
+            delay(100)
+            waitTime += 100
+        }
+        if (!_ttsReady.value) return
+
+        val letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        for ((index, value) in events.withIndex()) {
+            currentEventIndex = index
+            _progress.value = (index + 1) / events.size.toFloat()
+            matchCheckedForCurrentEvent = false
+            _matchResult.value = MatchResult.NONE
+            _gameState.value = _gameState.value.copy(eventValue = value)
+            if (value in 1..letters.length) {
+                tts?.speak(letters[value - 1].toString(), TextToSpeech.QUEUE_FLUSH, null, null)
+            }
+            delay(_gameState.value.eventInterval)
+        }
+    }
+
+    private suspend fun runVisualGame(events: Array<Int>) {
+        for ((index, value) in events.withIndex()) {
+            currentEventIndex = index
+            _progress.value = (index + 1) / events.size.toFloat()
+            matchCheckedForCurrentEvent = false
+            _matchResult.value = MatchResult.NONE
+            _gameState.value = _gameState.value.copy(eventValue = value)
+            delay(_gameState.value.eventInterval)
+        }
+    }
+
+    private fun runAudioVisualGame() {}
+
+    override fun onCleared() {
+        super.onCleared()
+        tts?.stop()
+        tts?.shutdown()
     }
 
     companion object {
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val application = (this[APPLICATION_KEY] as GameApplication)
-                GameVM(application.userPreferencesRespository)
+                GameVM(application.userPreferencesRespository, application)
             }
         }
     }
 
     init {
-        // Code that runs during creation of the vm
         viewModelScope.launch {
-            userPreferencesRepository.highscore.collect {
-                _highscore.value = it
+            userPreferencesRepository.highscore.collect { _highscore.value = it }
+        }
+        try {
+            tts = TextToSpeech(application) { status ->
+                if (status == TextToSpeech.SUCCESS) {
+                    _ttsReady.value = true
+                    tts?.language = Locale.US
+                }
             }
+        } catch (e: Exception) {
+            Log.e("GameVM", "Could not create TTS instance", e)
         }
     }
 }
 
-// Class with the different game types
-enum class GameType{
-    Audio,
-    Visual,
-    AudioVisual
-}
+enum class GameType { Audio, Visual, AudioVisual }
 
 data class GameState(
-    // You can use this state to push values from the VM to your UI.
-    val gameType: GameType = GameType.Visual,  // Type of the game
-    val eventValue: Int = -1  // The value of the array string
+    val gameType: GameType = GameType.Visual,
+    val eventValue: Int = -1,
+    val numberOfEvents: Int = 20,
+    val matchPercentage: Int = 30,
+    val nBack: Int = 2,
+    val eventInterval: Long = 2000L
 )
 
-class FakeVM: GameViewModel{
-    override val gameState: StateFlow<GameState>
-        get() = MutableStateFlow(GameState()).asStateFlow()
-    override val score: StateFlow<Int>
-        get() = MutableStateFlow(2).asStateFlow()
-    override val highscore: StateFlow<Int>
-        get() = MutableStateFlow(42).asStateFlow()
-    override val nBack: Int
-        get() = 2
+class FakeVM : GameViewModel {
+    override val gameState: StateFlow<GameState> = MutableStateFlow(GameState()).asStateFlow()
+    override val score: StateFlow<Int> = MutableStateFlow(2).asStateFlow()
+    override val highscore: StateFlow<Int> = MutableStateFlow(42).asStateFlow()
+    override val isGameOver: StateFlow<Boolean> = MutableStateFlow(false).asStateFlow()
+    override val matchResult: StateFlow<MatchResult> = MutableStateFlow(MatchResult.NONE).asStateFlow()
+    override val progress: StateFlow<Float> = MutableStateFlow(0.5f).asStateFlow()
 
-    override fun setGameType(gameType: GameType) {
-    }
-
-    override fun startGame() {
-    }
-
-    override fun checkMatch() {
-    }
+    override fun setGameType(gameType: GameType) {}
+    override fun startGame() {}
+    override fun checkMatch() {}
+    override fun resetGame() {}
+    override fun setNBack(nBack: Int) {}
+    override fun setNumberOfEvents(numberOfEvents: Int) {}
+    override fun setMatchPercentage(percentage: Int) {}
+    override fun setEventInterval(interval: Long) {}
 }

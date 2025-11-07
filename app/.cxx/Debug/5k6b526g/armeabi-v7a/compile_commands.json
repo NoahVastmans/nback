@@ -1,0 +1,12 @@
+[
+{
+  "directory": "C:/AndroidProjects/nback/app/.cxx/Debug/5k6b526g/armeabi-v7a",
+  "command": "C:\\Users\\NOAHVA~1\\AppData\\Local\\Android\\Sdk\\ndk\\270~1.120\\TOOLCH~1\\llvm\\prebuilt\\WINDOW~1\\bin\\clang.exe --target=armv7-none-linux-androideabi26 --sysroot=\"C:/Users/Noah Vastmans/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/sysroot\" -Dnback_cimpl_EXPORTS -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -fno-limit-debug-info  -fPIC -o CMakeFiles\\nback_cimpl.dir\\nback.c.o -c C:\\AndroidProjects\\nback\\app\\src\\main\\cpp\\nback.c",
+  "file": "C:\\AndroidProjects\\nback\\app\\src\\main\\cpp\\nback.c"
+},
+{
+  "directory": "C:/AndroidProjects/nback/app/.cxx/Debug/5k6b526g/armeabi-v7a",
+  "command": "C:\\Users\\NOAHVA~1\\AppData\\Local\\Android\\Sdk\\ndk\\270~1.120\\TOOLCH~1\\llvm\\prebuilt\\WINDOW~1\\bin\\clang.exe --target=armv7-none-linux-androideabi26 --sysroot=\"C:/Users/Noah Vastmans/AppData/Local/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/windows-x86_64/sysroot\" -DJniBridge_EXPORTS -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -fno-limit-debug-info  -fPIC -o CMakeFiles\\JniBridge.dir\\JniBridge.c.o -c C:\\AndroidProjects\\nback\\app\\src\\main\\cpp\\JniBridge.c",
+  "file": "C:\\AndroidProjects\\nback\\app\\src\\main\\cpp\\JniBridge.c"
+}
+]
