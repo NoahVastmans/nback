@@ -14,12 +14,16 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import mobappdev.example.nback_cimpl.ui.screens.GameScreen
 import mobappdev.example.nback_cimpl.ui.screens.HomeScreen
+import mobappdev.example.nback_cimpl.ui.screens.ResultScreen
+import mobappdev.example.nback_cimpl.ui.screens.SettingScreen
 import mobappdev.example.nback_cimpl.ui.theme.NBack_CImplTheme
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameVM
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
     object Game : Screen("game")
+    object Settings : Screen("settings")
+    object Results : Screen("results")
 }
 
 class MainActivity : ComponentActivity() {
@@ -51,6 +55,12 @@ fun NBackApp(vm: GameVM) {
         }
         composable(Screen.Game.route) {
             GameScreen(vm = vm, navController = navController)
+        }
+        composable(Screen.Settings.route) {
+            SettingScreen(vm = vm, navController = navController)
+        }
+        composable(Screen.Results.route) {
+            ResultScreen(vm = vm, navController = navController)
         }
     }
 }

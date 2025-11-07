@@ -29,18 +29,23 @@ interface GameViewModel {
     val gameState: StateFlow<GameState>
     val score: StateFlow<Int>
     val highscore: StateFlow<Int>
+    val totalMatches: StateFlow<Int>
     val isGameOver: StateFlow<Boolean>
-    val matchResult: StateFlow<MatchResult>
+    val visualMatchResult: StateFlow<MatchResult>
+    val audioMatchResult: StateFlow<MatchResult>
     val progress: StateFlow<Float>
 
     fun setGameType(gameType: GameType)
     fun startGame()
-    fun checkMatch()
+    fun checkVisualMatch()
+    fun checkAudioMatch()
     fun resetGame()
     fun setNBack(nBack: Int)
     fun setNumberOfEvents(numberOfEvents: Int)
     fun setMatchPercentage(percentage: Int)
     fun setEventInterval(interval: Long)
+    fun setNumberOfCombinations(combinations: Int)
+    fun setGridSize(size: Int)
 }
 
 class GameVM(
@@ -59,13 +64,21 @@ class GameVM(
     override val highscore: StateFlow<Int>
         get() = _highscore
 
+    private val _totalMatches = MutableStateFlow(0)
+    override val totalMatches: StateFlow<Int>
+        get() = _totalMatches.asStateFlow()
+
     private val _isGameOver = MutableStateFlow(false)
     override val isGameOver: StateFlow<Boolean>
         get() = _isGameOver.asStateFlow()
 
-    private val _matchResult = MutableStateFlow(MatchResult.NONE)
-    override val matchResult: StateFlow<MatchResult>
-        get() = _matchResult.asStateFlow()
+    private val _visualMatchResult = MutableStateFlow(MatchResult.NONE)
+    override val visualMatchResult: StateFlow<MatchResult>
+        get() = _visualMatchResult.asStateFlow()
+
+    private val _audioMatchResult = MutableStateFlow(MatchResult.NONE)
+    override val audioMatchResult: StateFlow<MatchResult>
+        get() = _audioMatchResult.asStateFlow()
 
     private val _progress = MutableStateFlow(0f)
     override val progress: StateFlow<Float>
@@ -73,9 +86,11 @@ class GameVM(
 
     private var job: Job? = null
     private val nBackHelper = NBackHelper()
-    private var events = emptyArray<Int>()
+    private var visualEvents = emptyArray<Int>()
+    private var audioEvents = emptyArray<Int>()
     private var currentEventIndex = 0
-    private var matchCheckedForCurrentEvent = false
+    private var visualMatchChecked = false
+    private var audioMatchChecked = false
 
     private var tts: TextToSpeech? = null
     private val _ttsReady = MutableStateFlow(false)
@@ -100,25 +115,63 @@ class GameVM(
         _gameState.value = _gameState.value.copy(eventInterval = interval)
     }
 
+    override fun setNumberOfCombinations(combinations: Int) {
+        _gameState.value = _gameState.value.copy(numberOfCombinations = combinations)
+    }
+
+    override fun setGridSize(size: Int) {
+        _gameState.value = _gameState.value.copy(gridSize = size)
+    }
+
     override fun startGame() {
         job?.cancel()
         _score.value = 0
         currentEventIndex = 0
-        _matchResult.value = MatchResult.NONE
+        resetChecks()
         _progress.value = 0f
 
         val currentState = _gameState.value
-        events = nBackHelper.generateNBackString(
-            size = currentState.numberOfEvents,
-            combinations = 9,
-            percentMatch = currentState.matchPercentage,
-            nBack = currentState.nBack
-        ).toList().toTypedArray()
+        val visualCombinations = currentState.gridSize * currentState.gridSize
+
+        when (currentState.gameType) {
+            GameType.Visual -> {
+                visualEvents = nBackHelper.generateNBackString(
+                    size = currentState.numberOfEvents,
+                    combinations = visualCombinations,
+                    percentMatch = currentState.matchPercentage,
+                    nBack = currentState.nBack
+                ).toList().toTypedArray()
+            }
+            GameType.Audio -> {
+                audioEvents = nBackHelper.generateNBackString(
+                    size = currentState.numberOfEvents,
+                    combinations = currentState.numberOfCombinations,
+                    percentMatch = currentState.matchPercentage,
+                    nBack = currentState.nBack
+                ).toList().toTypedArray()
+            }
+            GameType.AudioVisual -> {
+                visualEvents = nBackHelper.generateNBackString(
+                    size = currentState.numberOfEvents,
+                    combinations = visualCombinations,
+                    percentMatch = currentState.matchPercentage,
+                    nBack = currentState.nBack
+                ).toList().toTypedArray()
+
+                audioEvents = nBackHelper.generateNBackString(
+                    size = currentState.numberOfEvents,
+                    combinations = currentState.numberOfCombinations,
+                    percentMatch = currentState.matchPercentage,
+                    nBack = currentState.nBack
+                ).toList().toTypedArray()
+            }
+        }
+        calculateTotalMatches()
 
         job = viewModelScope.launch {
             when (currentState.gameType) {
                 GameType.Audio -> runAudioGame()
-                GameType.Visual -> runVisualGame(events)
+                GameType.Visual -> runVisualGame()
                 GameType.AudioVisual -> runAudioVisualGame()
             }
             val currentHighscore = highscore.first()
@@ -129,23 +182,84 @@ class GameVM(
         }
     }
 
-    override fun checkMatch() {
-        if (matchCheckedForCurrentEvent) return
+    private fun calculateTotalMatches() {
+        val currentState = _gameState.value
+        if (currentState.gameType != GameType.AudioVisual) {
+            // For single modes, we can use the direct calculation
+            _totalMatches.value = (currentState.numberOfEvents * currentState.matchPercentage) / 100
+        } else {
+            // For dual mode, we must iterate to find turns with at least one match
+            val nBack = currentState.nBack
+            var count = 0
+            for (i in nBack until visualEvents.size) {
+                val visualMatch = visualEvents[i] == visualEvents[i - nBack]
+                val audioMatch = audioEvents[i] == audioEvents[i - nBack]
+                if (visualMatch || audioMatch) {
+                    count++
+                }
+            }
+            _totalMatches.value = count
+        }
+    }
+
+    override fun checkVisualMatch() {
+        if (visualMatchChecked) return
 
         val nBack = _gameState.value.nBack
-        if (currentEventIndex >= nBack && events[currentEventIndex] == events[currentEventIndex - nBack]) {
-            _score.value++
-            _matchResult.value = MatchResult.CORRECT
-        } else {
-            _matchResult.value = MatchResult.INCORRECT
+        if (currentEventIndex < nBack) {
+            _visualMatchResult.value = MatchResult.INCORRECT
+            visualMatchChecked = true
+            return
         }
-        matchCheckedForCurrentEvent = true
+
+        val isMatch = visualEvents[currentEventIndex] == visualEvents[currentEventIndex - nBack]
+
+        if (isMatch) {
+            _visualMatchResult.value = MatchResult.CORRECT
+            if (_gameState.value.gameType != GameType.AudioVisual) {
+                _score.value++
+            }
+        } else {
+            _visualMatchResult.value = MatchResult.INCORRECT
+        }
+        visualMatchChecked = true
+    }
+
+    override fun checkAudioMatch() {
+        if (audioMatchChecked) return
+
+        val nBack = _gameState.value.nBack
+        if (currentEventIndex < nBack) {
+            _audioMatchResult.value = MatchResult.INCORRECT
+            audioMatchChecked = true
+            return
+        }
+
+        val isMatch = audioEvents[currentEventIndex] == audioEvents[currentEventIndex - nBack]
+
+        if (isMatch) {
+            _audioMatchResult.value = MatchResult.CORRECT
+            if (_gameState.value.gameType != GameType.AudioVisual) {
+                _score.value++
+            }
+        } else {
+            _audioMatchResult.value = MatchResult.INCORRECT
+        }
+        audioMatchChecked = true
     }
 
     override fun resetGame() {
         _isGameOver.value = false
-        _matchResult.value = MatchResult.NONE
+        resetChecks()
         _progress.value = 0f
+        _totalMatches.value = 0
+    }
+
+    private fun resetChecks() {
+        visualMatchChecked = false
+        audioMatchChecked = false
+        _visualMatchResult.value = MatchResult.NONE
+        _audioMatchResult.value = MatchResult.NONE
     }
 
     private suspend fun runAudioGame() {
@@ -157,11 +271,10 @@ class GameVM(
         if (!_ttsReady.value) return
 
         val letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        for ((index, value) in events.withIndex()) {
+        for ((index, value) in audioEvents.withIndex()) {
             currentEventIndex = index
-            _progress.value = (index + 1) / events.size.toFloat()
-            matchCheckedForCurrentEvent = false
-            _matchResult.value = MatchResult.NONE
+            _progress.value = (index + 1) / audioEvents.size.toFloat()
+            resetChecks()
             _gameState.value = _gameState.value.copy(eventValue = value)
             if (value in 1..letters.length) {
                 tts?.speak(letters[value - 1].toString(), TextToSpeech.QUEUE_FLUSH, null, null)
@@ -170,18 +283,54 @@ class GameVM(
         }
     }
 
-    private suspend fun runVisualGame(events: Array<Int>) {
-        for ((index, value) in events.withIndex()) {
+    private suspend fun runVisualGame() {
+        for ((index, value) in visualEvents.withIndex()) {
             currentEventIndex = index
-            _progress.value = (index + 1) / events.size.toFloat()
-            matchCheckedForCurrentEvent = false
-            _matchResult.value = MatchResult.NONE
+            _progress.value = (index + 1) / visualEvents.size.toFloat()
+            resetChecks()
             _gameState.value = _gameState.value.copy(eventValue = value)
             delay(_gameState.value.eventInterval)
         }
     }
 
-    private fun runAudioVisualGame() {}
+    private suspend fun runAudioVisualGame() {
+        var waitTime = 0L
+        while (!_ttsReady.value && waitTime < 3000L) {
+            delay(100)
+            waitTime += 100
+        }
+        if (!_ttsReady.value) return
+
+        val letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        val nBack = _gameState.value.nBack
+
+        for (index in visualEvents.indices) {
+            currentEventIndex = index
+            _progress.value = (index + 1) / visualEvents.size.toFloat()
+            resetChecks()
+
+            // Set visual value
+            _gameState.value = _gameState.value.copy(eventValue = visualEvents[index])
+
+            // Speak audio value
+            val audioValue = audioEvents[index]
+            if (audioValue in 1..letters.length) {
+                tts?.speak(letters[audioValue - 1].toString(), TextToSpeech.QUEUE_FLUSH, null, null)
+            }
+
+            delay(_gameState.value.eventInterval)
+
+            // --- Scoring for dual mode ---
+            val shouldHavePressedVisual = (index >= nBack && visualEvents[index] == visualEvents[index - nBack])
+            val shouldHavePressedAudio = (index >= nBack && audioEvents[index] == audioEvents[index - nBack])
+
+            val correctActions = (visualMatchChecked == shouldHavePressedVisual) && (audioMatchChecked == shouldHavePressedAudio)
+
+            if (correctActions && (shouldHavePressedVisual || shouldHavePressedAudio)) {
+                _score.value++
+            }
+        }
+    }
 
     override fun onCleared() {
         super.onCleared()
@@ -223,23 +372,30 @@ data class GameState(
     val numberOfEvents: Int = 20,
     val matchPercentage: Int = 30,
     val nBack: Int = 2,
-    val eventInterval: Long = 2000L
+    val eventInterval: Long = 2000L,
+    val numberOfCombinations: Int = 15,
+    val gridSize: Int = 3
 )
 
 class FakeVM : GameViewModel {
     override val gameState: StateFlow<GameState> = MutableStateFlow(GameState()).asStateFlow()
     override val score: StateFlow<Int> = MutableStateFlow(2).asStateFlow()
     override val highscore: StateFlow<Int> = MutableStateFlow(42).asStateFlow()
+    override val totalMatches: StateFlow<Int> = MutableStateFlow(5).asStateFlow()
     override val isGameOver: StateFlow<Boolean> = MutableStateFlow(false).asStateFlow()
-    override val matchResult: StateFlow<MatchResult> = MutableStateFlow(MatchResult.NONE).asStateFlow()
+    override val visualMatchResult: StateFlow<MatchResult> = MutableStateFlow(MatchResult.NONE).asStateFlow()
+    override val audioMatchResult: StateFlow<MatchResult> = MutableStateFlow(MatchResult.NONE).asStateFlow()
     override val progress: StateFlow<Float> = MutableStateFlow(0.5f).asStateFlow()
 
     override fun setGameType(gameType: GameType) {}
     override fun startGame() {}
-    override fun checkMatch() {}
+    override fun checkVisualMatch() {}
+    override fun checkAudioMatch() {}
     override fun resetGame() {}
     override fun setNBack(nBack: Int) {}
     override fun setNumberOfEvents(numberOfEvents: Int) {}
     override fun setMatchPercentage(percentage: Int) {}
     override fun setEventInterval(interval: Long) {}
+    override fun setNumberOfCombinations(combinations: Int) {}
+    override fun setGridSize(size: Int) {}
 }

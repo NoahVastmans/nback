@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -57,7 +57,11 @@ fun HomeScreen(
                 style = MaterialTheme.typography.headlineLarge
             )
 
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                modifier = Modifier.padding(horizontal = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text("N-Back: ${gameState.nBack}")
                 Slider(
                     value = gameState.nBack.toFloat(),
@@ -65,22 +69,12 @@ fun HomeScreen(
                     valueRange = 1f..5f,
                     steps = 3
                 )
-
                 Text("Number of Events: ${gameState.numberOfEvents}")
-                Slider(
-                    value = gameState.numberOfEvents.toFloat(),
-                    onValueChange = { vm.setNumberOfEvents(it.roundToInt()) },
-                    valueRange = 10f..50f,
-                    steps = 39
-                )
-
                 Text("Time Between Events: ${gameState.eventInterval / 1000}s")
-                Slider(
-                    value = gameState.eventInterval.toFloat(),
-                    onValueChange = { vm.setEventInterval(it.toLong()) },
-                    valueRange = 1000f..5000f,
-                    steps = 3
-                )
+            }
+
+            Button(onClick = { navController.navigate(Screen.Settings.route) }) {
+                Text("More Settings")
             }
 
             Column(
@@ -89,52 +83,76 @@ fun HomeScreen(
                     .padding(vertical = 16.dp)
                     .border(BorderStroke(2.dp, MaterialTheme.colorScheme.primary), shape = MaterialTheme.shapes.medium)
                     .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
                     text = "Start Game",
                     style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
+
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Button(onClick = {
-                            vm.resetGame()
-                            vm.setGameType(GameType.Audio)
-                            navController.navigate(Screen.Game.route)
-                        }) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Button(
+                            onClick = {
+                                vm.resetGame()
+                                vm.setGameType(GameType.Audio)
+                                navController.navigate(Screen.Game.route)
+                            },
+                            modifier = Modifier.fillMaxWidth().height(64.dp)
+                        ) {
                             Icon(
                                 painter = painterResource(id = R.drawable.sound_on),
                                 contentDescription = "Sound",
-                                modifier = Modifier
-                                    .height(48.dp)
-                                    .aspectRatio(3f / 2f)
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
                         Text("Audio Mode")
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         Button(
                             onClick = {
                                 vm.resetGame()
                                 vm.setGameType(GameType.Visual)
                                 navController.navigate(Screen.Game.route)
-                            }) {
+                            },
+                            modifier = Modifier.fillMaxWidth().height(64.dp)
+                        ) {
                             Icon(
                                 painter = painterResource(id = R.drawable.visual),
                                 contentDescription = "Visual",
-                                modifier = Modifier
-                                    .height(48.dp)
-                                    .aspectRatio(3f / 2f)
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
                         Text("Visual Mode")
                     }
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Button(
+                        onClick = {
+                            vm.resetGame()
+                            vm.setGameType(GameType.AudioVisual)
+                            navController.navigate(Screen.Game.route)
+                        },
+                        modifier = Modifier.fillMaxWidth().height(64.dp)
+                    ) {
+                        Text("Dual", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    }
+                    Text("Dual Mode")
                 }
             }
         }

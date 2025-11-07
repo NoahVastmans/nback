@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import mobappdev.example.nback_cimpl.R
+import mobappdev.example.nback_cimpl.Screen
 import mobappdev.example.nback_cimpl.ui.viewmodels.FakeVM
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameType
 import mobappdev.example.nback_cimpl.ui.viewmodels.GameViewModel
@@ -53,12 +54,15 @@ fun GameScreen(
     val gameState by vm.gameState.collectAsState()
     val score by vm.score.collectAsState()
     val isGameOver by vm.isGameOver.collectAsState()
-    val matchResult by vm.matchResult.collectAsState()
+    val visualMatchResult by vm.visualMatchResult.collectAsState()
+    val audioMatchResult by vm.audioMatchResult.collectAsState()
     val progress by vm.progress.collectAsState()
 
     if (isGameOver) {
         LaunchedEffect(Unit) {
-            navController.popBackStack()
+            navController.navigate(Screen.Results.route) {
+                popUpTo(Screen.Game.route) { inclusive = true }
+            }
         }
     }
 
@@ -66,7 +70,12 @@ fun GameScreen(
         vm.startGame()
     }
 
-    val buttonColors = when (matchResult) {
+    val audioButtonColors = when (audioMatchResult) {
+        MatchResult.CORRECT -> ButtonDefaults.buttonColors(containerColor = Color.Green)
+        MatchResult.INCORRECT -> ButtonDefaults.buttonColors(containerColor = Color.Red)
+        else -> ButtonDefaults.buttonColors()
+    }
+    val visualButtonColors = when (visualMatchResult) {
         MatchResult.CORRECT -> ButtonDefaults.buttonColors(containerColor = Color.Green)
         MatchResult.INCORRECT -> ButtonDefaults.buttonColors(containerColor = Color.Red)
         else -> ButtonDefaults.buttonColors()
@@ -101,18 +110,18 @@ fun GameScreen(
                 contentAlignment = Alignment.Center
             ) {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
+                    columns = GridCells.Fixed(gameState.gridSize),
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    items(9) { tileIndex ->
+                    items(gameState.gridSize * gameState.gridSize) { tileIndex ->
                         Card(
                             modifier = Modifier
                                 .padding(8.dp)
                                 .aspectRatio(1f),
                             colors = CardDefaults.cardColors(
-                                containerColor = if (gameState.gameType == GameType.Visual && tileIndex + 1 == gameState.eventValue) {
+                                containerColor = if (gameState.gameType != GameType.Audio && tileIndex + 1 == gameState.eventValue) {
                                     MaterialTheme.colorScheme.primary
                                 } else {
                                     MaterialTheme.colorScheme.surfaceVariant
@@ -132,9 +141,9 @@ fun GameScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
-                    onClick = { vm.checkMatch() },
+                    onClick = { vm.checkAudioMatch() },
                     enabled = gameState.gameType == GameType.Audio || gameState.gameType == GameType.AudioVisual,
-                    colors = buttonColors,
+                    colors = audioButtonColors,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .weight(1f)
@@ -147,9 +156,9 @@ fun GameScreen(
                     )
                 }
                 Button(
-                    onClick = { vm.checkMatch() },
+                    onClick = { vm.checkVisualMatch() },
                     enabled = gameState.gameType == GameType.Visual || gameState.gameType == GameType.AudioVisual,
-                    colors = buttonColors,
+                    colors = visualButtonColors,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .weight(1f)
