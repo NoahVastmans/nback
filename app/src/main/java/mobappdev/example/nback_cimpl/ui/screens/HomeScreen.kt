@@ -88,7 +88,7 @@ fun HomeScreen(
             ) {
                 Text(
                     text = "Start Game",
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.headlineLarge,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 

@@ -40,6 +40,7 @@ interface GameViewModel {
     fun checkVisualMatch()
     fun checkAudioMatch()
     fun resetGame()
+    fun resetSettings()
     fun setNBack(nBack: Int)
     fun setNumberOfEvents(numberOfEvents: Int)
     fun setMatchPercentage(percentage: Int)
@@ -100,27 +101,43 @@ class GameVM(
     }
 
     override fun setNBack(nBack: Int) {
-        _gameState.value = _gameState.value.copy(nBack = nBack)
+        viewModelScope.launch {
+            userPreferencesRepository.saveNBack(nBack)
+        }
     }
 
     override fun setNumberOfEvents(numberOfEvents: Int) {
-        _gameState.value = _gameState.value.copy(numberOfEvents = numberOfEvents)
+        viewModelScope.launch {
+            userPreferencesRepository.saveNumberOfEvents(numberOfEvents)
+        }
     }
 
     override fun setMatchPercentage(percentage: Int) {
-        _gameState.value = _gameState.value.copy(matchPercentage = percentage)
+        // Not saved for now
     }
 
     override fun setEventInterval(interval: Long) {
-        _gameState.value = _gameState.value.copy(eventInterval = interval)
+        viewModelScope.launch {
+            userPreferencesRepository.saveEventInterval(interval)
+        }
     }
 
     override fun setNumberOfCombinations(combinations: Int) {
-        _gameState.value = _gameState.value.copy(numberOfCombinations = combinations)
+        viewModelScope.launch {
+            userPreferencesRepository.saveNumberOfCombinations(combinations)
+        }
     }
 
     override fun setGridSize(size: Int) {
-        _gameState.value = _gameState.value.copy(gridSize = size)
+        viewModelScope.launch {
+            userPreferencesRepository.saveGridSize(size)
+        }
+    }
+    
+    override fun resetSettings() {
+        viewModelScope.launch {
+            userPreferencesRepository.resetSettings()
+        }
     }
 
     override fun startGame() {
@@ -130,50 +147,55 @@ class GameVM(
         resetChecks()
         _progress.value = 0f
 
-        val currentState = _gameState.value
-        val visualCombinations = currentState.gridSize * currentState.gridSize
-
-        when (currentState.gameType) {
-            GameType.Visual -> {
-                visualEvents = nBackHelper.generateNBackString(
-                    size = currentState.numberOfEvents,
-                    combinations = visualCombinations,
-                    percentMatch = currentState.matchPercentage,
-                    nBack = currentState.nBack
-                ).toList().toTypedArray()
-            }
-            GameType.Audio -> {
-                audioEvents = nBackHelper.generateNBackString(
-                    size = currentState.numberOfEvents,
-                    combinations = currentState.numberOfCombinations,
-                    percentMatch = currentState.matchPercentage,
-                    nBack = currentState.nBack
-                ).toList().toTypedArray()
-            }
-            GameType.AudioVisual -> {
-                visualEvents = nBackHelper.generateNBackString(
-                    size = currentState.numberOfEvents,
-                    combinations = visualCombinations,
-                    percentMatch = currentState.matchPercentage,
-                    nBack = currentState.nBack
-                ).toList().toTypedArray()
-
-                audioEvents = nBackHelper.generateNBackString(
-                    size = currentState.numberOfEvents,
-                    combinations = currentState.numberOfCombinations,
-                    percentMatch = currentState.matchPercentage,
-                    nBack = currentState.nBack
-                ).toList().toTypedArray()
-            }
-        }
-        calculateTotalMatches()
-
         job = viewModelScope.launch {
+            val currentState = _gameState.value
+            val visualCombinations = currentState.gridSize * currentState.gridSize
+
+            when (currentState.gameType) {
+                GameType.Visual -> {
+                    visualEvents = nBackHelper.generateNBackString(
+                        size = currentState.numberOfEvents,
+                        combinations = visualCombinations,
+                        percentMatch = currentState.matchPercentage,
+                        nBack = currentState.nBack
+                    ).toList().toTypedArray()
+                }
+                GameType.Audio -> {
+                    audioEvents = nBackHelper.generateNBackString(
+                        size = currentState.numberOfEvents,
+                        combinations = currentState.numberOfCombinations,
+                        percentMatch = currentState.matchPercentage,
+                        nBack = currentState.nBack
+                    ).toList().toTypedArray()
+                }
+                GameType.AudioVisual -> {
+                    visualEvents = nBackHelper.generateNBackString(
+                        size = currentState.numberOfEvents,
+                        combinations = visualCombinations,
+                        percentMatch = currentState.matchPercentage,
+                        nBack = currentState.nBack
+                    ).toList().toTypedArray()
+
+                    delay(1001) // Force a different seed for the C-code's time(NULL)
+
+                    audioEvents = nBackHelper.generateNBackString(
+                        size = currentState.numberOfEvents,
+                        combinations = currentState.numberOfCombinations,
+                        percentMatch = currentState.matchPercentage,
+                        nBack = currentState.nBack
+                    ).toList().toTypedArray()
+                }
+            }
+            calculateTotalMatches()
+
+            // Start the actual game loop
             when (currentState.gameType) {
                 GameType.Audio -> runAudioGame()
                 GameType.Visual -> runVisualGame()
                 GameType.AudioVisual -> runAudioVisualGame()
             }
+
+            // After game finishes, check and save highscore
             val currentHighscore = highscore.first()
             if (score.value > currentHighscore) {
                 userPreferencesRepository.saveHighScore(score.value)
@@ -185,10 +207,8 @@ class GameVM(
     private fun calculateTotalMatches() {
         val currentState = _gameState.value
         if (currentState.gameType != GameType.AudioVisual) {
-            // For single modes, we can use the direct calculation
             _totalMatches.value = (currentState.numberOfEvents * currentState.matchPercentage) / 100
         } else {
-            // For dual mode, we must iterate to find turns with at least one match
             val nBack = currentState.nBack
             var count = 0
             for (i in nBack until visualEvents.size) {
@@ -351,6 +371,32 @@ class GameVM(
         viewModelScope.launch {
             userPreferencesRepository.highscore.collect { _highscore.value = it }
         }
+        viewModelScope.launch {
+            userPreferencesRepository.nBack.collect { nBack ->
+                _gameState.value = _gameState.value.copy(nBack = nBack)
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.numberOfEvents.collect { numEvents ->
+                _gameState.value = _gameState.value.copy(numberOfEvents = numEvents)
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.eventInterval.collect { interval ->
+                _gameState.value = _gameState.value.copy(eventInterval = interval)
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.numberOfCombinations.collect { numCombinations ->
+                _gameState.value = _gameState.value.copy(numberOfCombinations = numCombinations)
+            }
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.gridSize.collect { size ->
+                _gameState.value = _gameState.value.copy(gridSize = size)
+            }
+        }
+
         try {
             tts = TextToSpeech(application) { status ->
                 if (status == TextToSpeech.SUCCESS) {
@@ -392,6 +438,7 @@ class FakeVM : GameViewModel {
     override fun checkVisualMatch() {}
     override fun checkAudioMatch() {}
     override fun resetGame() {}
+    override fun resetSettings() {}
     override fun setNBack(nBack: Int) {}
     override fun setNumberOfEvents(numberOfEvents: Int) {}
     override fun setMatchPercentage(percentage: Int) {}
